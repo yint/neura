@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Work Memory POC</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Workspace controls">
+        <div class="brand-block">
+          <div class="brand-mark">WM</div>
+          <div>
+            <h1>Work Memory</h1>
+            <p>POC dashboard</p>
+          </div>
+        </div>
+
+        <section class="panel query-panel" aria-labelledby="query-title">
+          <h2 id="query-title">Ask</h2>
+          <label class="field-label" for="queryInput">Dashboard prompt</label>
+          <textarea id="queryInput" rows="5">Top 5 things from the past few months</textarea>
+
+          <div class="field-grid">
+            <label>
+              Window
+              <select id="windowSelect">
+                <option value="90">90 days</option>
+                <option value="120" selected>120 days</option>
+                <option value="180">180 days</option>
+                <option value="365">1 year</option>
+              </select>
+            </label>
+            <label>
+              Scope
+              <select id="scopeSelect">
+                <option value="all" selected>All work</option>
+                <option value="customer">Customer</option>
+                <option value="launch">Launch</option>
+                <option value="reliability">Reliability</option>
+                <option value="sales">Sales</option>
+              </select>
+            </label>
+          </div>
+
+          <button id="generateButton" class="primary-button" type="button">
+            Generate dashboard
+          </button>
+        </section>
+
+        <section class="panel" aria-labelledby="source-title">
+          <div class="panel-heading">
+            <h2 id="source-title">Source Mix</h2>
+            <span id="sourceCount" class="pill">0</span>
+          </div>
+          <div id="sourceMix" class="source-mix"></div>
+        </section>
+
+        <section class="panel" aria-labelledby="tier-title">
+          <div class="panel-heading">
+            <h2 id="tier-title">Storage Tiers</h2>
+            <span class="pill">live</span>
+          </div>
+          <div id="tierList" class="tier-list"></div>
+        </section>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Generated workspace</p>
+            <h2 id="dashboardTitle">Top 5 Work Themes</h2>
+          </div>
+          <div class="topbar-actions">
+            <button id="refreshButton" class="ghost-button" type="button">Refresh</button>
+            <button id="saveButton" class="ghost-button" type="button">Save</button>
+          </div>
+        </header>
+
+        <section class="metric-strip" aria-label="Dashboard metrics">
+          <article class="metric-card">
+            <span>Sources</span>
+            <strong id="metricSources">0</strong>
+          </article>
+          <article class="metric-card">
+            <span>Chunks</span>
+            <strong id="metricChunks">0</strong>
+          </article>
+          <article class="metric-card">
+            <span>Decisions</span>
+            <strong id="metricDecisions">0</strong>
+          </article>
+          <article class="metric-card">
+            <span>Actions</span>
+            <strong id="metricActions">0</strong>
+          </article>
+        </section>
+
+        <nav id="tabs" class="tabs" aria-label="Dashboard tabs"></nav>
+
+        <section class="content-grid">
+          <div id="tabContent" class="tab-content"></div>
+          <aside class="source-preview" aria-label="Source preview">
+            <div class="preview-header">
+              <div>
+                <p class="eyebrow">Source viewer</p>
+                <h3 id="previewTitle">Select evidence</h3>
+              </div>
+              <span id="previewTier" class="tier-badge">idle</span>
+            </div>
+            <div id="previewMeta" class="preview-meta"></div>
+            <div id="previewBody" class="preview-body">
+              <p class="empty-state">Open a citation, source, decision, or action to inspect the underlying material.</p>
+            </div>
+          </aside>
+        </section>
+      </main>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
