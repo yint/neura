@@ -423,6 +423,25 @@ select {
   gap: 13px;
 }
 
+.notice-card {
+  display: grid;
+  gap: 3px;
+  border: 1px solid #d8c48d;
+  border-radius: 8px;
+  background: #fff7db;
+  padding: 11px 12px;
+  color: #4b4126;
+}
+
+.notice-card strong {
+  font-size: 13px;
+}
+
+.notice-card span {
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .customer-hero {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 116px;

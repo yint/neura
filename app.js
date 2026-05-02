@@ -752,6 +752,11 @@ function buildDashboard() {
     .sort((a, b) => b.score - a.score)
     .slice(0, 5);
 
+  const customerRows = buildCustomerProgress(eligibleSources);
+  const customerFallbackRows = customerRows.length
+    ? customerRows
+    : buildCustomerProgress(SOURCES.map((source) => ({ ...source, score: 0, tier: tierForSource(source) })));
+
   const dashboard = {
     query,
     scope,
@@ -759,7 +764,8 @@ function buildDashboard() {
     sources: eligibleSources,
     chunks,
     themes: themeRows,
-    customers: buildCustomerProgress(eligibleSources),
+    customers: customerFallbackRows,
+    customerFallback: !customerRows.length,
     decisions: eligibleSources.flatMap((source) =>
       source.decisions.map((decision) => ({ ...decision, sourceId: source.id, sourceTitle: source.title, sourceType: source.type }))
     ),
@@ -952,6 +958,17 @@ function renderCustomers() {
 
   return `
     <div class="customer-workspace">
+      ${
+        state.dashboard.customerFallback
+          ? `
+          <div class="notice-card">
+            <strong>Showing full workspace customer model.</strong>
+            <span>The current dashboard filters did not return customer-linked sources, so this tab falls back to all synthetic customer evidence.</span>
+          </div>
+        `
+          : ""
+      }
+
       <div class="subtab-row" aria-label="Customer tabs">
         ${customers
           .map(
