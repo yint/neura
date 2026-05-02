@@ -172,7 +172,8 @@ select {
 
 .pill,
 .tier-badge,
-.status-badge {
+.status-badge,
+.importance-badge {
   display: inline-flex;
   align-items: center;
   min-height: 24px;
@@ -182,6 +183,18 @@ select {
   color: var(--muted);
   font-size: 12px;
   font-weight: 700;
+}
+
+.badge-stack {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.importance-badge {
+  background: #e8f2ed;
+  color: var(--green);
 }
 
 .source-mix,
@@ -257,7 +270,7 @@ select {
 
 .metric-strip {
   display: grid;
-  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  grid-template-columns: repeat(5, minmax(120px, 1fr));
   gap: 12px;
   margin-bottom: 14px;
 }
@@ -283,6 +296,11 @@ select {
   display: block;
   margin-top: 7px;
   font-size: 28px;
+}
+
+.importance-metric {
+  border-color: #b9c8c1;
+  background: #f7fbf8;
 }
 
 .tabs {
@@ -482,7 +500,7 @@ select {
 
 .customer-stats {
   display: grid;
-  grid-template-columns: repeat(4, minmax(110px, 1fr));
+  grid-template-columns: repeat(5, minmax(110px, 1fr));
   gap: 9px;
 }
 
@@ -611,7 +629,7 @@ select {
 
 .theme-stats {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 8px;
   margin-top: 12px;
 }
@@ -634,6 +652,13 @@ select {
   display: block;
   margin-top: 4px;
   font-size: 16px;
+}
+
+.importance-note {
+  margin-top: 10px;
+  color: #4c5554;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .detail-list,

@@ -642,6 +642,7 @@ const els = {
   metricChunks: document.getElementById("metricChunks"),
   metricDecisions: document.getElementById("metricDecisions"),
   metricActions: document.getElementById("metricActions"),
+  metricImportance: document.getElementById("metricImportance"),
   previewTitle: document.getElementById("previewTitle"),
   previewTier: document.getElementById("previewTier"),
   previewMeta: document.getElementById("previewMeta"),
@@ -737,6 +738,7 @@ function buildDashboard() {
       const actionCount = themeSources.flatMap((source) => source.actions).filter((action) => action.status !== "done").length;
       const score = themeSources.length * 5 + totalPriority + recency / 10 + actionCount * 3;
       const confidence = confidenceForTheme(themeSources);
+      const importance = judgeThemeImportance(themeId, themeSources, themeChunks, actionCount);
       return {
         id: themeId,
         ...theme,
@@ -744,6 +746,7 @@ function buildDashboard() {
         chunks: themeChunks,
         score,
         confidence,
+        importance,
         actionCount,
         trend: trendForTheme(themeSources),
       };
@@ -764,6 +767,7 @@ function buildDashboard() {
     sources: eligibleSources,
     chunks,
     themes: themeRows,
+    importance: summarizeImportance(themeRows.map((theme) => theme.importance)),
     customers: customerFallbackRows,
     customerFallback: !customerRows.length,
     decisions: eligibleSources.flatMap((source) =>
@@ -798,14 +802,17 @@ function buildCustomerProgress(sources) {
         const latestActivity = projectSources
           .map((source) => source.lastActivity)
           .sort((a, b) => new Date(b) - new Date(a))[0];
+        const openActions = projectActions.filter((action) => action.status !== "done").length;
+        const importance = judgeProjectImportance(project, projectSources, projectActions);
 
         return {
           ...project,
           sources: projectSources,
           actions: projectActions,
           decisions: projectDecisions,
-          openActions: projectActions.filter((action) => action.status !== "done").length,
+          openActions,
           acceptedDecisions: projectDecisions.filter((decision) => decision.status === "accepted").length,
+          importance,
           latestActivity,
           tierMix: ["hot", "warm", "cold", "archive"].map((tier) => ({
             tier,
@@ -820,6 +827,7 @@ function buildCustomerProgress(sources) {
       : 0;
     const openActions = projects.reduce((sum, project) => sum + project.openActions, 0);
     const sourceCount = unique(projects.flatMap((project) => project.sources.map((source) => source.id))).length;
+    const importance = summarizeImportance(projects.map((project) => project.importance));
     const latestActivity = projects
       .map((project) => project.latestActivity)
       .filter(Boolean)
@@ -831,6 +839,7 @@ function buildCustomerProgress(sources) {
       progress,
       openActions,
       sourceCount,
+      importance,
       latestActivity,
     };
   }).filter((customer) => customer.projects.length > 0);
@@ -847,6 +856,127 @@ function ensureCustomerSelection(customers) {
   if (!activeProjectExists) {
     state.activeProjectId = activeCustomer?.projects[0]?.id || null;
   }
+}
+
+function judgeThemeImportance(themeId, sources, chunks, actionCount) {
+  if (!sources.length) {
+    return {
+      score: 0,
+      label: "None",
+      model: "mock-backend-llm",
+      reasons: ["No source evidence matched this dashboard request."],
+    };
+  }
+
+  const baseByTheme = {
+    onboarding: 72,
+    revenue: 70,
+    governance: 73,
+    reliability: 68,
+    launch: 64,
+    workflow: 62,
+  };
+  const sourceTypes = new Set(sources.map((source) => source.type));
+  const recentSources = sources.filter((source) => daysBetween(source.lastActivity) <= 21).length;
+  const coldSources = sources.filter((source) => source.tier === "cold" || source.tier === "archive").length;
+  const maxPriority = Math.max(...sources.map((source) => source.priority));
+  const score = clamp(
+    (baseByTheme[themeId] || 60) +
+      Math.min(10, sources.length * 2) +
+      Math.min(8, sourceTypes.size * 2) +
+      Math.min(8, recentSources * 3) +
+      Math.min(8, actionCount * 3) +
+      Math.max(0, maxPriority - 7) * 2 -
+      coldSources * 2,
+    15,
+    99
+  );
+
+  const reasons = [
+    `${sources.length} supporting source${sources.length === 1 ? "" : "s"} across ${sourceTypes.size} system${sourceTypes.size === 1 ? "" : "s"}`,
+    `${actionCount} unresolved action${actionCount === 1 ? "" : "s"} attached to the evidence set`,
+  ];
+  if (recentSources) {
+    reasons.push(`${recentSources} recent source${recentSources === 1 ? "" : "s"} in the last 21 days`);
+  }
+  if (coldSources) {
+    reasons.push(`${coldSources} older source${coldSources === 1 ? "" : "s"} need hydration before deep inspection`);
+  }
+
+  return {
+    score,
+    label: importanceLabel(score),
+    model: "mock-backend-llm",
+    reasons,
+  };
+}
+
+function judgeProjectImportance(project, sources, actions) {
+  const openActions = actions.filter((action) => action.status !== "done").length;
+  const recentSources = sources.filter((source) => daysBetween(source.lastActivity) <= 21).length;
+  const dueSoon = daysBetween(project.due) >= -21 && daysBetween(project.due) <= 5;
+  const statusBoost = {
+    Blocked: 18,
+    "Needs answers": 14,
+    "On track": 6,
+    Validated: 4,
+  }[project.status] || 8;
+  const prioritySignal = sources.length ? Math.round(sources.reduce((sum, source) => sum + source.priority, 0) / sources.length) : 5;
+  const score = clamp(
+    42 +
+      statusBoost +
+      Math.min(12, openActions * 4) +
+      Math.min(10, recentSources * 4) +
+      Math.min(8, sources.length * 2) +
+      prioritySignal +
+      (dueSoon ? 8 : 0),
+    10,
+    99
+  );
+
+  const reasons = [
+    `${project.status.toLowerCase()} project status`,
+    `${openActions} open action${openActions === 1 ? "" : "s"}`,
+    `${sources.length} linked evidence source${sources.length === 1 ? "" : "s"}`,
+  ];
+  if (dueSoon) {
+    reasons.push(`due date is near: ${formatDate(project.due)}`);
+  }
+
+  return {
+    score,
+    label: importanceLabel(score),
+    model: "mock-backend-llm",
+    reasons,
+  };
+}
+
+function summarizeImportance(items) {
+  const scores = items.map((item) => item.score).filter((score) => score > 0);
+  if (!scores.length) {
+    return {
+      score: 0,
+      label: "None",
+      model: "mock-backend-llm",
+      reasons: ["No importance-bearing evidence was found."],
+    };
+  }
+  const maxScore = Math.max(...scores);
+  const average = scores.reduce((sum, score) => sum + score, 0) / scores.length;
+  const score = Math.round(maxScore * 0.65 + average * 0.35);
+  return {
+    score,
+    label: importanceLabel(score),
+    model: "mock-backend-llm",
+    reasons: [`Highest item scored ${maxScore}`, `Average scored ${Math.round(average)}`],
+  };
+}
+
+function importanceLabel(score) {
+  if (score >= 85) return "Critical";
+  if (score >= 70) return "High";
+  if (score >= 50) return "Medium";
+  return "Low";
 }
 
 function confidenceForTheme(sources) {
@@ -914,6 +1044,7 @@ function renderMetrics() {
   els.metricChunks.textContent = dashboard.chunks.length;
   els.metricDecisions.textContent = dashboard.decisions.length;
   els.metricActions.textContent = dashboard.actions.length;
+  els.metricImportance.textContent = dashboard.importance.score ? `${dashboard.importance.score}` : "0";
 }
 
 function renderTabs() {
@@ -998,6 +1129,7 @@ function renderCustomers() {
         <div class="stat"><span>Projects</span><strong>${activeCustomer.projects.length}</strong></div>
         <div class="stat"><span>Sources</span><strong>${customerSources.length}</strong></div>
         <div class="stat"><span>Open Actions</span><strong>${activeCustomer.openActions}</strong></div>
+        <div class="stat"><span>Importance</span><strong>${activeCustomer.importance.score}</strong></div>
       </div>
 
       <div class="subtab-row project-tabs" aria-label="Project tabs">
@@ -1020,9 +1152,13 @@ function renderCustomers() {
               <p class="eyebrow">${escapeHtml(activeProject.stage)} / due ${formatDate(activeProject.due)}</p>
               <h3>${escapeHtml(activeProject.name)}</h3>
             </div>
-            <span class="status-badge">${escapeHtml(activeProject.status)}</span>
+            <div class="badge-stack">
+              <span class="status-badge">${escapeHtml(activeProject.status)}</span>
+              <span class="importance-badge">${activeProject.importance.label} ${activeProject.importance.score}</span>
+            </div>
           </header>
           <p>${escapeHtml(activeProject.summary)}</p>
+          <p class="importance-note"><strong>Mock LLM judge:</strong> ${escapeHtml(activeProject.importance.reasons.join("; "))}.</p>
           <div class="progress-track" aria-label="${activeProject.progress}% project progress">
             <span style="width:${activeProject.progress}%"></span>
           </div>
@@ -1042,6 +1178,7 @@ function renderCustomers() {
           <div class="stat"><span>Evidence</span><strong>${projectSourceCount}</strong></div>
           <div class="stat"><span>Decisions</span><strong>${activeProject.decisions.length}</strong></div>
           <div class="stat"><span>Open Actions</span><strong>${activeProject.openActions}</strong></div>
+          <div class="stat"><span>Importance</span><strong>${activeProject.importance.score}</strong></div>
           <div class="stat"><span>Latest</span><strong>${formatShortDate(activeProject.latestActivity)}</strong></div>
         </aside>
       </section>
@@ -1092,14 +1229,19 @@ function renderSummary() {
                 <p class="eyebrow">Theme ${index + 1}</p>
                 <h3>${escapeHtml(theme.label)}</h3>
               </div>
-              <span class="status-badge">${theme.confidence}</span>
+              <div class="badge-stack">
+                <span class="status-badge">${theme.confidence}</span>
+                <span class="importance-badge">${theme.importance.label} ${theme.importance.score}</span>
+              </div>
             </header>
             <p>${escapeHtml(theme.summary)}</p>
             <div class="theme-stats">
               <div class="stat"><span>Sources</span><strong>${theme.sources.length}</strong></div>
               <div class="stat"><span>Trend</span><strong>${theme.trend}</strong></div>
               <div class="stat"><span>Open</span><strong>${theme.actionCount}</strong></div>
+              <div class="stat"><span>Importance</span><strong>${theme.importance.score}</strong></div>
             </div>
+            <p class="importance-note"><strong>Mock LLM judge:</strong> ${escapeHtml(theme.importance.reasons.slice(0, 2).join("; "))}.</p>
             <div class="button-row">
               ${theme.sources
                 .slice(0, 3)
@@ -1126,9 +1268,13 @@ function renderDetails() {
                 <p class="eyebrow">${theme.sources.length} sources, ${theme.chunks.length} chunks</p>
                 <h3>${escapeHtml(theme.label)}</h3>
               </div>
-              <span class="status-badge">${theme.trend}</span>
+              <div class="badge-stack">
+                <span class="status-badge">${theme.trend}</span>
+                <span class="importance-badge">${theme.importance.label} ${theme.importance.score}</span>
+              </div>
             </header>
             <p><strong>Why it matters:</strong> ${escapeHtml(theme.why)}</p>
+            <p><strong>Importance judgment:</strong> ${escapeHtml(theme.importance.reasons.join("; "))}.</p>
             <p class="source-quote">${escapeHtml(bestSnippet(theme))}</p>
             <div class="meta-line">
               ${unique(theme.sources.flatMap((source) => source.people))
@@ -1474,6 +1620,10 @@ function highlightKeywords(html, keywords) {
 
 function unique(values) {
   return Array.from(new Set(values));
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, Math.round(value)));
 }
 
 function capitalize(value) {
