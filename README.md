@@ -9,7 +9,7 @@ Open `index.html` in a browser. No dependencies, build step, or API keys are req
 - Normalized source objects for Slack, Teams, email, and documents
 - Chunk generation for retrieval and citation-style evidence
 - Hot, warm, and cold storage tier simulation
-- Mock backend LLM importance scoring for themes, customers, and projects
+- Mock backend LLM importance labels for themes, customers, and projects
 - Generated dashboard tabs:
   - Summary
   - Customers with customer and project subtabs

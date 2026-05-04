@@ -968,7 +968,7 @@ function summarizeImportance(items) {
     score,
     label: importanceLabel(score),
     model: "mock-backend-llm",
-    reasons: [`Highest item scored ${maxScore}`, `Average scored ${Math.round(average)}`],
+    reasons: [`Highest item is ${importanceLabel(maxScore)}`, `Overall judgment is ${importanceLabel(score)}`],
   };
 }
 
@@ -1044,7 +1044,7 @@ function renderMetrics() {
   els.metricChunks.textContent = dashboard.chunks.length;
   els.metricDecisions.textContent = dashboard.decisions.length;
   els.metricActions.textContent = dashboard.actions.length;
-  els.metricImportance.textContent = dashboard.importance.score ? `${dashboard.importance.score}` : "0";
+  els.metricImportance.textContent = dashboard.importance.label;
 }
 
 function renderTabs() {
@@ -1129,7 +1129,7 @@ function renderCustomers() {
         <div class="stat"><span>Projects</span><strong>${activeCustomer.projects.length}</strong></div>
         <div class="stat"><span>Sources</span><strong>${customerSources.length}</strong></div>
         <div class="stat"><span>Open Actions</span><strong>${activeCustomer.openActions}</strong></div>
-        <div class="stat"><span>Importance</span><strong>${activeCustomer.importance.score}</strong></div>
+        <div class="stat"><span>Importance</span><strong>${activeCustomer.importance.label}</strong></div>
       </div>
 
       <div class="subtab-row project-tabs" aria-label="Project tabs">
@@ -1154,7 +1154,7 @@ function renderCustomers() {
             </div>
             <div class="badge-stack">
               <span class="status-badge">${escapeHtml(activeProject.status)}</span>
-              <span class="importance-badge">${activeProject.importance.label} ${activeProject.importance.score}</span>
+              <span class="importance-badge">${activeProject.importance.label}</span>
             </div>
           </header>
           <p>${escapeHtml(activeProject.summary)}</p>
@@ -1178,7 +1178,7 @@ function renderCustomers() {
           <div class="stat"><span>Evidence</span><strong>${projectSourceCount}</strong></div>
           <div class="stat"><span>Decisions</span><strong>${activeProject.decisions.length}</strong></div>
           <div class="stat"><span>Open Actions</span><strong>${activeProject.openActions}</strong></div>
-          <div class="stat"><span>Importance</span><strong>${activeProject.importance.score}</strong></div>
+          <div class="stat"><span>Importance</span><strong>${activeProject.importance.label}</strong></div>
           <div class="stat"><span>Latest</span><strong>${formatShortDate(activeProject.latestActivity)}</strong></div>
         </aside>
       </section>
@@ -1231,7 +1231,7 @@ function renderSummary() {
               </div>
               <div class="badge-stack">
                 <span class="status-badge">${theme.confidence}</span>
-                <span class="importance-badge">${theme.importance.label} ${theme.importance.score}</span>
+                <span class="importance-badge">${theme.importance.label}</span>
               </div>
             </header>
             <p>${escapeHtml(theme.summary)}</p>
@@ -1239,7 +1239,7 @@ function renderSummary() {
               <div class="stat"><span>Sources</span><strong>${theme.sources.length}</strong></div>
               <div class="stat"><span>Trend</span><strong>${theme.trend}</strong></div>
               <div class="stat"><span>Open</span><strong>${theme.actionCount}</strong></div>
-              <div class="stat"><span>Importance</span><strong>${theme.importance.score}</strong></div>
+              <div class="stat"><span>Importance</span><strong>${theme.importance.label}</strong></div>
             </div>
             <p class="importance-note"><strong>Mock LLM judge:</strong> ${escapeHtml(theme.importance.reasons.slice(0, 2).join("; "))}.</p>
             <div class="button-row">
@@ -1270,7 +1270,7 @@ function renderDetails() {
               </div>
               <div class="badge-stack">
                 <span class="status-badge">${theme.trend}</span>
-                <span class="importance-badge">${theme.importance.label} ${theme.importance.score}</span>
+                <span class="importance-badge">${theme.importance.label}</span>
               </div>
             </header>
             <p><strong>Why it matters:</strong> ${escapeHtml(theme.why)}</p>
