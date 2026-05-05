@@ -11,7 +11,7 @@ Open `index.html` in a browser. No dependencies, build step, or API keys are req
 - Hot, warm, and cold storage tier simulation
 - Mock backend LLM importance labels for themes, customers, and projects
 - Generated dashboard tabs:
-  - Overview
+  - Overview with a copy-ready Top 5 summary
   - Customers with customer/project subtabs and filters
   - Engagements for meetings, minutes, recordings, and transcripts
   - Evidence

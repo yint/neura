@@ -449,6 +449,34 @@ select {
   background: #f7fbf8;
 }
 
+.overview-copy-panel {
+  background: #f7fbf8;
+}
+
+.overview-copy-text {
+  width: 100%;
+  min-height: 300px;
+  margin-top: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  color: var(--ink);
+  padding: 14px;
+  resize: vertical;
+  line-height: 1.55;
+}
+
+.compact-primary {
+  width: auto;
+}
+
+.connection-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 11px;
+}
+
 .filter-bar {
   display: grid;
   grid-template-columns: minmax(220px, 1fr) 150px 150px auto;

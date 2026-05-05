@@ -1350,17 +1350,21 @@ function filterCustomers(customers) {
 
 function renderOverview() {
   const dashboard = state.dashboard;
+  const overviewText = buildOverviewText(dashboard);
   return `
     <div class="overview-layout">
-      <section class="brief-section overview-brief">
+      <section class="brief-section overview-copy-panel">
         <header>
           <div>
-            <p class="eyebrow">Overview</p>
-            <h3>${escapeHtml(dashboard.query)}</h3>
+            <p class="eyebrow">Copy-ready summary</p>
+            <h3>Top 5 things</h3>
           </div>
           <span class="importance-badge">${dashboard.importance.label}</span>
         </header>
-        <p>This dashboard compresses the current source set into the most important themes, then routes details into Customers, Engagements, Evidence, Actions & Decisions, Gaps, and Timeline.</p>
+        <textarea id="overviewCopyText" class="overview-copy-text" readonly>${escapeHtml(overviewText)}</textarea>
+        <div class="button-row">
+          <button class="primary-button compact-primary" type="button" data-copy-overview>Copy summary</button>
+        </div>
       </section>
       <div class="summary-grid">
       ${dashboard.themes
@@ -1384,13 +1388,7 @@ function renderOverview() {
               <div class="stat"><span>Open</span><strong>${theme.actionCount}</strong></div>
               <div class="stat"><span>Importance</span><strong>${theme.importance.label}</strong></div>
             </div>
-            <p class="importance-note"><strong>Mock LLM judge:</strong> ${escapeHtml(theme.importance.reasons.slice(0, 2).join("; "))}.</p>
-            <div class="button-row">
-              ${theme.sources
-                .slice(0, 3)
-                .map((source) => `<button class="small-button" type="button" data-source="${source.id}">${SOURCE_LABELS[source.type]}: ${escapeHtml(shortTitle(source.title))}</button>`)
-                .join("")}
-            </div>
+            ${renderOverviewConnections(theme)}
           </article>
         `
         )
@@ -1398,6 +1396,77 @@ function renderOverview() {
       </div>
     </div>
   `;
+}
+
+function buildOverviewText(dashboard) {
+  const lines = [
+    `Top 5 things from the last ${dashboard.windowDays} days`,
+    `Scope: ${dashboard.scope === "all" ? "All work" : dashboard.scope}`,
+    `Importance: ${dashboard.importance.label}`,
+    "",
+  ];
+
+  dashboard.themes.forEach((theme, index) => {
+    const action = firstThemeAction(theme);
+    const engagement = findThemeEngagement(theme);
+    const customerLink = findThemeCustomerLink(theme);
+    const evidence = theme.sources[0];
+
+    lines.push(`${index + 1}. ${theme.label} (${theme.importance.label})`);
+    lines.push(`   Summary: ${theme.summary}`);
+    lines.push(`   Why it matters: ${theme.why}`);
+    lines.push(`   Status signal: ${theme.trend}; ${theme.actionCount} open action${theme.actionCount === 1 ? "" : "s"}; ${theme.sources.length} supporting source${theme.sources.length === 1 ? "" : "s"}.`);
+    if (customerLink) {
+      lines.push(`   Customer/project: ${customerLink.customer.name} / ${customerLink.project.name}.`);
+    }
+    if (engagement) {
+      lines.push(`   Related engagement: ${engagement.title} (${formatDate(engagement.date)}).`);
+    }
+    if (evidence) {
+      lines.push(`   Evidence: ${SOURCE_LABELS[evidence.type]} - ${evidence.title}.`);
+    }
+    lines.push(`   Next step: ${action ? action.text : "Review related evidence and confirm whether the item needs follow-up."}`);
+    lines.push("");
+  });
+
+  return lines.join("\n").trim();
+}
+
+function renderOverviewConnections(theme) {
+  const customerLink = findThemeCustomerLink(theme);
+  const engagement = findThemeEngagement(theme);
+  const evidence = theme.sources[0];
+
+  return `
+    <div class="connection-row">
+      ${customerLink ? `<button class="small-button" type="button" data-open-customer="${customerLink.customer.id}" data-open-project="${customerLink.project.id}">Customer: ${escapeHtml(customerLink.customer.name)}</button>` : ""}
+      ${engagement ? `<button class="small-button" type="button" data-open-engagement="${engagement.id}">Engagement: ${escapeHtml(shortTitle(engagement.title))}</button>` : ""}
+      ${evidence ? `<button class="small-button" type="button" data-open-evidence-source="${evidence.id}">Evidence: ${SOURCE_LABELS[evidence.type]}</button>` : ""}
+      <button class="small-button" type="button" data-open-tab="Gaps">Gaps</button>
+    </div>
+  `;
+}
+
+function firstThemeAction(theme) {
+  return theme.sources
+    .flatMap((source) => source.actions)
+    .find((action) => action.status !== "done");
+}
+
+function findThemeCustomerLink(theme) {
+  const sourceIds = new Set(theme.sources.map((source) => source.id));
+  for (const customer of state.dashboard.customers) {
+    const project = customer.projects.find((candidate) => candidate.sources.some((source) => sourceIds.has(source.id)));
+    if (project) {
+      return { customer, project };
+    }
+  }
+  return null;
+}
+
+function findThemeEngagement(theme) {
+  const sourceIds = new Set(theme.sources.map((source) => source.id));
+  return state.dashboard.engagements.find((engagement) => engagement.sources.some((source) => sourceIds.has(source.id)));
 }
 
 function renderDetails() {
@@ -2029,6 +2098,36 @@ function showToast(message) {
   window.setTimeout(() => els.toast.classList.remove("visible"), 1800);
 }
 
+function setActiveTab(tab) {
+  state.activeTab = tab;
+  renderTabs();
+  renderActiveTab();
+}
+
+function copyOverviewText() {
+  const textArea = document.getElementById("overviewCopyText");
+  if (!textArea) return;
+
+  const text = textArea.value;
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard
+      .writeText(text)
+      .then(() => showToast("Overview copied"))
+      .catch(() => fallbackCopy(textArea));
+    return;
+  }
+
+  fallbackCopy(textArea);
+}
+
+function fallbackCopy(textArea) {
+  textArea.focus();
+  textArea.select();
+  document.execCommand("copy");
+  textArea.setSelectionRange(0, 0);
+  showToast("Overview copied");
+}
+
 els.generateButton.addEventListener("click", buildDashboard);
 els.refreshButton.addEventListener("click", () => {
   buildDashboard();
@@ -2040,11 +2139,49 @@ els.saveButton.addEventListener("click", () => {
 els.tabs.addEventListener("click", (event) => {
   const button = event.target.closest("[data-tab]");
   if (!button) return;
-  state.activeTab = button.dataset.tab;
-  renderTabs();
-  renderActiveTab();
+  setActiveTab(button.dataset.tab);
 });
 els.tabContent.addEventListener("click", (event) => {
+  if (event.target.closest("[data-copy-overview]")) {
+    copyOverviewText();
+    return;
+  }
+
+  const openTabButton = event.target.closest("[data-open-tab]");
+  if (openTabButton) {
+    setActiveTab(openTabButton.dataset.openTab);
+    return;
+  }
+
+  const openCustomerButton = event.target.closest("[data-open-customer]");
+  if (openCustomerButton) {
+    state.activeCustomerId = openCustomerButton.dataset.openCustomer;
+    state.activeProjectId = openCustomerButton.dataset.openProject || null;
+    state.customerSearch = "";
+    state.customerDateFrom = "";
+    state.customerDateTo = "";
+    setActiveTab("Customers");
+    return;
+  }
+
+  const openEvidenceButton = event.target.closest("[data-open-evidence-source]");
+  if (openEvidenceButton) {
+    const source = SOURCES.find((candidate) => candidate.id === openEvidenceButton.dataset.openEvidenceSource);
+    state.evidenceType = source?.type || "all";
+    state.selectedSourceId = openEvidenceButton.dataset.openEvidenceSource;
+    setActiveTab("Evidence");
+    renderPreview();
+    return;
+  }
+
+  const openEngagementButton = event.target.closest("[data-open-engagement]");
+  if (openEngagementButton) {
+    const engagement = state.dashboard.engagements.find((candidate) => candidate.id === openEngagementButton.dataset.openEngagement);
+    state.engagementSearch = engagement?.title || "";
+    setActiveTab("Engagements");
+    return;
+  }
+
   if (event.target.closest("[data-clear-customer-filters]")) {
     state.customerSearch = "";
     state.customerDateFrom = "";
