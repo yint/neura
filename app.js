@@ -604,23 +604,87 @@ const CUSTOMERS = [
   },
 ];
 
+const ENGAGEMENTS = [
+  {
+    id: "eng-acme-risk-review",
+    title: "Acme onboarding risk review",
+    customerId: "acme-bank",
+    date: "2026-04-16",
+    type: "Meeting",
+    status: "Follow-up needed",
+    attendees: ["Maya Chen", "Jon Bell", "Support Ops", "Legal Review"],
+    minutes:
+      "Reviewed import blockers, legal review ownership, and the need for customer-facing timelines on two blocked accounts.",
+    recording: "Available",
+    transcript: "Ready",
+    sourceIds: ["slack-1021", "doc-7112", "email-9004"],
+  },
+  {
+    id: "eng-northstar-security",
+    title: "Northstar security and governance call",
+    customerId: "northstar-health",
+    date: "2026-03-20",
+    type: "Customer call",
+    status: "Needs answers",
+    attendees: ["Priya Shah", "Maya Chen", "Security Review"],
+    minutes:
+      "Customer asked for retention, export controls, private-channel ACL inheritance, and audit logs for generated dashboard source sets.",
+    recording: "Not uploaded",
+    transcript: "Notes only",
+    sourceIds: ["email-2048", "slack-6200"],
+  },
+  {
+    id: "eng-helio-demo",
+    title: "Helio launch readiness demo",
+    customerId: "helio-retail",
+    date: "2026-04-22",
+    type: "Demo",
+    status: "On track",
+    attendees: ["Alex Rivera", "Nina Park", "Product Leads"],
+    minutes:
+      "Demo focused on summary-to-source drilldown, timeline changes, decisions, and evidence-backed source preview.",
+    recording: "Available",
+    transcript: "Ready",
+    sourceIds: ["email-5012", "doc-3099", "teams-4111"],
+  },
+  {
+    id: "eng-platform-architecture",
+    title: "Hot/cold storage architecture review",
+    customerId: "helio-retail",
+    date: "2026-03-27",
+    type: "Internal review",
+    status: "Validated",
+    attendees: ["Nina Park", "Owen Mills", "Alex Rivera"],
+    minutes:
+      "Platform agreed that summaries, permissions, and source stubs stay hot while full source bodies hydrate on open.",
+    recording: "Available",
+    transcript: "Ready",
+    sourceIds: ["teams-4111", "teams-8220"],
+  },
+];
+
 const TABS = [
-  "Summary",
+  "Overview",
   "Customers",
-  "Details",
+  "Engagements",
   "Evidence",
-  "Timeline",
-  "Decisions",
-  "Actions",
+  "Actions & Decisions",
   "Gaps",
-  "Sources",
+  "Timeline",
+  "Custom",
 ];
 
 let state = {
   dashboard: null,
-  activeTab: "Summary",
+  activeTab: "Overview",
   activeCustomerId: null,
   activeProjectId: null,
+  customerSearch: "",
+  customerDateFrom: "",
+  customerDateTo: "",
+  evidenceType: "all",
+  engagementSearch: "",
+  customTabName: "",
   selectedSourceId: null,
   hydratedSources: new Set(),
 };
@@ -770,6 +834,7 @@ function buildDashboard() {
     importance: summarizeImportance(themeRows.map((theme) => theme.importance)),
     customers: customerFallbackRows,
     customerFallback: !customerRows.length,
+    engagements: buildEngagements(eligibleSources, windowDays),
     decisions: eligibleSources.flatMap((source) =>
       source.decisions.map((decision) => ({ ...decision, sourceId: source.id, sourceTitle: source.title, sourceType: source.type }))
     ),
@@ -780,11 +845,35 @@ function buildDashboard() {
   };
 
   state.dashboard = dashboard;
-  state.activeTab = "Summary";
+  state.activeTab = "Overview";
   ensureCustomerSelection(dashboard.customers);
   state.selectedSourceId = eligibleSources[0]?.id || null;
   render();
   showToast("Dashboard generated");
+}
+
+function buildEngagements(sources, windowDays) {
+  const sourceById = new Map(sources.map((source) => [source.id, source]));
+  const allSourceById = new Map(SOURCES.map((source) => [source.id, { ...source, tier: tierForSource(source) }]));
+  return ENGAGEMENTS.filter((engagement) => daysBetween(engagement.date) <= windowDays)
+    .map((engagement) => {
+      const linkedSources = engagement.sourceIds
+        .map((sourceId) => sourceById.get(sourceId) || allSourceById.get(sourceId))
+        .filter(Boolean);
+      const customer = CUSTOMERS.find((candidate) => candidate.id === engagement.customerId);
+      return {
+        ...engagement,
+        customerName: customer?.name || "Internal",
+        sources: linkedSources,
+        actions: linkedSources.flatMap((source) =>
+          source.actions.map((action) => ({ ...action, sourceId: source.id, sourceTitle: source.title }))
+        ),
+        decisions: linkedSources.flatMap((source) =>
+          source.decisions.map((decision) => ({ ...decision, sourceId: source.id, sourceTitle: source.title }))
+        ),
+      };
+    })
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
 }
 
 function buildCustomerProgress(sources) {
@@ -1039,9 +1128,9 @@ function renderSidebar() {
 
 function renderMetrics() {
   const dashboard = state.dashboard;
-  els.dashboardTitle.textContent = `${dashboard.themes.length} Work Themes, Last ${dashboard.windowDays} Days`;
+  els.dashboardTitle.textContent = `Workspace Overview, Last ${dashboard.windowDays} Days`;
   els.metricSources.textContent = dashboard.sources.length;
-  els.metricChunks.textContent = dashboard.chunks.length;
+  els.metricChunks.textContent = dashboard.engagements.length;
   els.metricDecisions.textContent = dashboard.decisions.length;
   els.metricActions.textContent = dashboard.actions.length;
   els.metricImportance.textContent = dashboard.importance.label;
@@ -1055,28 +1144,31 @@ function renderTabs() {
 
 function renderActiveTab() {
   const renderers = {
-    Summary: renderSummary,
+    Overview: renderOverview,
     Customers: renderCustomers,
-    Details: renderDetails,
+    Engagements: renderEngagements,
     Evidence: renderEvidence,
-    Timeline: renderTimeline,
-    Decisions: renderDecisions,
-    Actions: renderActions,
+    "Actions & Decisions": renderActionsDecisions,
     Gaps: renderGaps,
-    Sources: renderSources,
+    Timeline: renderTimeline,
+    Custom: renderCustomTab,
   };
-  els.tabContent.innerHTML = renderers[state.activeTab]();
+  els.tabContent.innerHTML = (renderers[state.activeTab] || renderOverview)();
 }
 
 function renderCustomers() {
-  const customers = state.dashboard.customers;
+  const allCustomers = state.dashboard.customers;
+  const customers = filterCustomers(allCustomers);
   ensureCustomerSelection(customers);
 
   if (!customers.length) {
     return `
-      <div class="empty-panel">
-        <h3>No customer progress found</h3>
-        <p>Try widening the time window or switching the scope back to all work.</p>
+      <div class="customer-workspace">
+        ${renderCustomerFilters()}
+        <div class="empty-panel">
+          <h3>No matching customers</h3>
+          <p>Try clearing the customer search or date filters.</p>
+        </div>
       </div>
     `;
   }
@@ -1089,6 +1181,7 @@ function renderCustomers() {
 
   return `
     <div class="customer-workspace">
+      ${renderCustomerFilters()}
       ${
         state.dashboard.customerFallback
           ? `
@@ -1216,10 +1309,60 @@ function renderCustomers() {
   `;
 }
 
-function renderSummary() {
+function renderCustomerFilters() {
+  return `
+    <div class="filter-bar" aria-label="Customer filters">
+      <label>
+        Customer or project
+        <input id="customerSearch" type="search" value="${escapeHtml(state.customerSearch)}" placeholder="Search Acme, governance, launch..." />
+      </label>
+      <label>
+        From
+        <input id="customerDateFrom" type="date" value="${escapeHtml(state.customerDateFrom)}" />
+      </label>
+      <label>
+        To
+        <input id="customerDateTo" type="date" value="${escapeHtml(state.customerDateTo)}" />
+      </label>
+      <button class="small-button" type="button" data-clear-customer-filters>Clear</button>
+    </div>
+  `;
+}
+
+function filterCustomers(customers) {
+  const query = normalizeText(state.customerSearch);
+  return customers
+    .map((customer) => {
+      const projects = customer.projects.filter((project) => {
+        const searchable = normalizeText(
+          `${customer.name} ${customer.segment} ${customer.owner} ${project.name} ${project.status} ${project.stage} ${project.summary} ${project.blockers.join(" ")} ${project.nextSteps.join(" ")}`
+        );
+        const matchesSearch = !query || searchable.includes(query);
+        const projectDate = project.latestActivity || project.due;
+        const matchesFrom = !state.customerDateFrom || projectDate >= state.customerDateFrom;
+        const matchesTo = !state.customerDateTo || projectDate <= state.customerDateTo;
+        return matchesSearch && matchesFrom && matchesTo;
+      });
+      return { ...customer, projects };
+    })
+    .filter((customer) => customer.projects.length > 0);
+}
+
+function renderOverview() {
   const dashboard = state.dashboard;
   return `
-    <div class="summary-grid">
+    <div class="overview-layout">
+      <section class="brief-section overview-brief">
+        <header>
+          <div>
+            <p class="eyebrow">Overview</p>
+            <h3>${escapeHtml(dashboard.query)}</h3>
+          </div>
+          <span class="importance-badge">${dashboard.importance.label}</span>
+        </header>
+        <p>This dashboard compresses the current source set into the most important themes, then routes details into Customers, Engagements, Evidence, Actions & Decisions, Gaps, and Timeline.</p>
+      </section>
+      <div class="summary-grid">
       ${dashboard.themes
         .map(
           (theme, index) => `
@@ -1252,6 +1395,7 @@ function renderSummary() {
         `
         )
         .join("")}
+      </div>
     </div>
   `;
 }
@@ -1295,56 +1439,107 @@ function renderDetails() {
   `;
 }
 
-function renderEvidence() {
-  const evidence = state.dashboard.themes.flatMap((theme) =>
-    theme.chunks.slice(0, 4).map((chunk) => ({
-      ...chunk,
-      themeLabel: theme.label,
-      source: state.dashboard.sources.find((source) => source.id === chunk.sourceId),
-    }))
-  );
+function renderEngagements() {
+  const query = normalizeText(state.engagementSearch);
+  const engagements = state.dashboard.engagements.filter((engagement) => {
+    const searchable = normalizeText(
+      `${engagement.title} ${engagement.customerName} ${engagement.type} ${engagement.status} ${engagement.minutes} ${engagement.attendees.join(" ")}`
+    );
+    return !query || searchable.includes(query);
+  });
+
   return `
-    <div class="evidence-list">
-      ${evidence
+    <div class="engagement-workspace">
+      <div class="filter-bar" aria-label="Engagement filters">
+        <label>
+          Meeting or customer
+          <input id="engagementSearch" type="search" value="${escapeHtml(state.engagementSearch)}" placeholder="Search meetings, customers, attendees..." />
+        </label>
+      </div>
+      <div class="engagement-list">
+        ${engagements
+          .map(
+            (engagement) => `
+            <article class="engagement-card">
+              <header>
+                <div>
+                  <p class="eyebrow">${escapeHtml(engagement.customerName)} / ${escapeHtml(engagement.type)}</p>
+                  <h3>${escapeHtml(engagement.title)}</h3>
+                </div>
+                <span class="status-badge">${escapeHtml(engagement.status)}</span>
+              </header>
+              <p>${escapeHtml(engagement.minutes)}</p>
+              <div class="meta-line">
+                <span class="pill">${formatDate(engagement.date)}</span>
+                <span class="pill">Recording: ${escapeHtml(engagement.recording)}</span>
+                <span class="pill">Transcript: ${escapeHtml(engagement.transcript)}</span>
+              </div>
+              <div class="meta-line">
+                ${engagement.attendees.map((attendee) => `<span class="pill">${escapeHtml(attendee)}</span>`).join("")}
+              </div>
+              <div class="button-row">
+                ${engagement.sources
+                  .slice(0, 4)
+                  .map((source) => `<button class="small-button" type="button" data-source="${source.id}">${SOURCE_LABELS[source.type]}: ${escapeHtml(shortTitle(source.title))}</button>`)
+                  .join("")}
+              </div>
+            </article>
+          `
+          )
+          .join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderEvidence() {
+  const sources = state.dashboard.sources.filter((source) => state.evidenceType === "all" || source.type === state.evidenceType);
+  return `
+    <div class="evidence-workspace">
+      <div class="filter-bar" aria-label="Evidence filters">
+        <label>
+          Source type
+          <select id="evidenceType">
+            <option value="all" ${state.evidenceType === "all" ? "selected" : ""}>All evidence</option>
+            <option value="email" ${state.evidenceType === "email" ? "selected" : ""}>Email</option>
+            <option value="slack" ${state.evidenceType === "slack" ? "selected" : ""}>Slack</option>
+            <option value="teams" ${state.evidenceType === "teams" ? "selected" : ""}>Teams</option>
+            <option value="doc" ${state.evidenceType === "doc" ? "selected" : ""}>Documents</option>
+          </select>
+        </label>
+      </div>
+      <div class="source-list">
+        ${sources
         .map(
-          (item) => `
-          <article class="evidence-card">
+          (source) => `
+          <article class="source-card">
+            <header>
+              <div>
+                <p class="eyebrow">${SOURCE_LABELS[source.type]} / ${escapeHtml(source.location)}</p>
+                <h3>${escapeHtml(source.title)}</h3>
+              </div>
+              <span class="tier-badge">${capitalize(source.tier)}</span>
+            </header>
+            <p>${escapeHtml(source.summary)}</p>
             <div class="meta-line">
-              <span class="pill">${escapeHtml(item.themeLabel)}</span>
-              <span class="pill">${SOURCE_LABELS[item.sourceType]}</span>
-              <span class="pill">${escapeHtml(item.date)}</span>
-              <span class="pill">${capitalize(item.tier)}</span>
+              <span class="pill">${formatDate(source.date)}</span>
+              <span class="pill">${escapeHtml(source.author)}</span>
+              ${source.themes.map((theme) => `<span class="pill">${escapeHtml(THEMES[theme].label)}</span>`).join("")}
             </div>
-            <blockquote>${highlightKeywords(escapeHtml(item.text), THEMES[item.themes[0]]?.keywords || [])}</blockquote>
             <div class="button-row">
-              <button class="small-button" type="button" data-source="${item.sourceId}">Open source</button>
+              <button class="small-button" type="button" data-source="${source.id}">Open source</button>
             </div>
           </article>
         `
         )
         .join("")}
+      </div>
     </div>
   `;
 }
 
 function renderTimeline() {
-  const events = state.dashboard.sources
-    .flatMap((source) => [
-      {
-        date: source.date,
-        title: source.title,
-        body: source.summary,
-        source,
-        kind: "Source",
-      },
-      ...source.decisions.map((decision) => ({
-        date: decision.date,
-        title: "Decision",
-        body: decision.text,
-        source,
-        kind: decision.status,
-      })),
-    ])
+  const events = buildTimelineEvents()
     .sort((a, b) => new Date(a.date) - new Date(b.date));
 
   return `
@@ -1357,18 +1552,151 @@ function renderTimeline() {
             <div>
               <div class="meta-line">
                 <span class="pill">${escapeHtml(event.kind)}</span>
-                <span class="pill">${SOURCE_LABELS[event.source.type]}</span>
+                ${event.source ? `<span class="pill">${SOURCE_LABELS[event.source.type]}</span>` : ""}
               </div>
               <h3>${escapeHtml(event.title)}</h3>
               <p>${escapeHtml(event.body)}</p>
-              <div class="button-row">
-                <button class="small-button" type="button" data-source="${event.source.id}">Open source</button>
-              </div>
+              ${
+                event.source
+                  ? `
+                  <div class="button-row">
+                    <button class="small-button" type="button" data-source="${event.source.id}">Open source</button>
+                  </div>
+                `
+                  : ""
+              }
             </div>
           </article>
         `
         )
         .join("")}
+    </div>
+  `;
+}
+
+function buildTimelineEvents() {
+  return state.dashboard.sources
+    .flatMap((source) => [
+      {
+        date: source.date,
+        title: source.title,
+        body: source.summary,
+        source,
+        kind: "Source",
+      },
+      ...source.actions.map((action) => ({
+        date: action.due,
+        title: "Action",
+        body: action.text,
+        source,
+        kind: action.status,
+      })),
+      ...source.decisions.map((decision) => ({
+        date: decision.date,
+        title: "Decision",
+        body: decision.text,
+        source,
+        kind: decision.status,
+      })),
+    ])
+    .concat(
+      state.dashboard.engagements.map((engagement) => ({
+        date: engagement.date,
+        title: engagement.title,
+        body: engagement.minutes,
+        source: engagement.sources[0],
+        kind: engagement.type,
+      }))
+    );
+}
+
+function renderActionsDecisions() {
+  return `
+    <div class="stacked-sections">
+      <section class="brief-section">
+        <header>
+          <div>
+            <p class="eyebrow">Follow-through</p>
+            <h3>Actions</h3>
+          </div>
+        </header>
+        ${renderActionTable()}
+      </section>
+      <section class="brief-section">
+        <header>
+          <div>
+            <p class="eyebrow">Decision log</p>
+            <h3>Decisions</h3>
+          </div>
+        </header>
+        ${renderDecisionTable()}
+      </section>
+    </div>
+  `;
+}
+
+function renderActionTable() {
+  return `
+    <div class="table-wrap embedded-table">
+      <table>
+        <thead>
+          <tr>
+            <th>Action / Next Step</th>
+            <th>Owner</th>
+            <th>Due</th>
+            <th>Status</th>
+            <th>Source</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${state.dashboard.actions
+            .map(
+              (action) => `
+              <tr>
+                <td>${escapeHtml(action.text)}</td>
+                <td>${escapeHtml(action.owner)}</td>
+                <td>${formatDate(action.due)}</td>
+                <td><span class="status-badge">${escapeHtml(action.status)}</span></td>
+                <td><button class="small-button" type="button" data-source="${action.sourceId}">${escapeHtml(action.sourceTitle)}</button></td>
+              </tr>
+            `
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderDecisionTable() {
+  return `
+    <div class="table-wrap embedded-table">
+      <table>
+        <thead>
+          <tr>
+            <th>Decision / Thing Done</th>
+            <th>Date</th>
+            <th>Owner</th>
+            <th>Status</th>
+            <th>Source</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${state.dashboard.decisions
+            .map(
+              (decision) => `
+              <tr>
+                <td>${escapeHtml(decision.text)}</td>
+                <td>${formatDate(decision.date)}</td>
+                <td>${escapeHtml(decision.owner)}</td>
+                <td><span class="status-badge">${escapeHtml(decision.status)}</span></td>
+                <td><button class="small-button" type="button" data-source="${decision.sourceId}">${escapeHtml(decision.sourceTitle)}</button></td>
+              </tr>
+            `
+            )
+            .join("")}
+        </tbody>
+      </table>
     </div>
   `;
 }
@@ -1517,8 +1845,34 @@ function renderSources() {
   `;
 }
 
+function renderCustomTab() {
+  const customName = state.customTabName.trim() || "Custom workspace tab";
+  return `
+    <div class="custom-tab-panel">
+      <section class="brief-section">
+        <header>
+          <div>
+            <p class="eyebrow">Later extension point</p>
+            <h3>${escapeHtml(customName)}</h3>
+          </div>
+          <span class="status-badge">Draft</span>
+        </header>
+        <p>Use this as a placeholder for team-specific views: QBRs, renewals, roadmap, hiring, risk review, executive brief, or any other dashboard lens.</p>
+        <div class="filter-bar single-field">
+          <label>
+            Tab name
+            <input id="customTabName" type="text" value="${escapeHtml(state.customTabName)}" placeholder="Example: QBR Readout" />
+          </label>
+        </div>
+      </section>
+    </div>
+  `;
+}
+
 function renderPreview() {
-  const source = state.dashboard?.sources.find((candidate) => candidate.id === state.selectedSourceId);
+  const source =
+    state.dashboard?.sources.find((candidate) => candidate.id === state.selectedSourceId) ||
+    SOURCES.map((candidate) => ({ ...candidate, tier: tierForSource(candidate) })).find((candidate) => candidate.id === state.selectedSourceId);
   if (!source) {
     els.previewTitle.textContent = "Select evidence";
     els.previewTier.textContent = "idle";
@@ -1691,6 +2045,14 @@ els.tabs.addEventListener("click", (event) => {
   renderActiveTab();
 });
 els.tabContent.addEventListener("click", (event) => {
+  if (event.target.closest("[data-clear-customer-filters]")) {
+    state.customerSearch = "";
+    state.customerDateFrom = "";
+    state.customerDateTo = "";
+    renderActiveTab();
+    return;
+  }
+
   const customerButton = event.target.closest("[data-customer]");
   if (customerButton) {
     state.activeCustomerId = customerButton.dataset.customer;
@@ -1711,6 +2073,34 @@ els.tabContent.addEventListener("click", (event) => {
   if (!button) return;
   state.selectedSourceId = button.dataset.source;
   renderPreview();
+});
+els.tabContent.addEventListener("input", (event) => {
+  if (event.target.id === "customerSearch") {
+    state.customerSearch = event.target.value;
+  }
+  if (event.target.id === "engagementSearch") {
+    state.engagementSearch = event.target.value;
+  }
+  if (event.target.id === "customTabName") {
+    state.customTabName = event.target.value;
+  }
+});
+els.tabContent.addEventListener("change", (event) => {
+  if (event.target.id === "customerDateFrom") {
+    state.customerDateFrom = event.target.value;
+    renderActiveTab();
+  }
+  if (event.target.id === "customerDateTo") {
+    state.customerDateTo = event.target.value;
+    renderActiveTab();
+  }
+  if (event.target.id === "evidenceType") {
+    state.evidenceType = event.target.value;
+    renderActiveTab();
+  }
+  if (event.target.id === "customerSearch" || event.target.id === "engagementSearch" || event.target.id === "customTabName") {
+    renderActiveTab();
+  }
 });
 els.previewBody.addEventListener("click", (event) => {
   if (event.target.id !== "hydrateButton") return;

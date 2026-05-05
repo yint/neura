@@ -11,15 +11,14 @@ Open `index.html` in a browser. No dependencies, build step, or API keys are req
 - Hot, warm, and cold storage tier simulation
 - Mock backend LLM importance labels for themes, customers, and projects
 - Generated dashboard tabs:
-  - Summary
-  - Customers with customer and project subtabs
-  - Details
+  - Overview
+  - Customers with customer/project subtabs and filters
+  - Engagements for meetings, minutes, recordings, and transcripts
   - Evidence
-  - Timeline
-  - Decisions
-  - Actions
+  - Actions & Decisions
   - Gaps
-  - Sources
+  - Timeline
+  - Custom placeholder
 - Source viewer behavior, including cold-source hydration
 
 ## POC Boundaries
